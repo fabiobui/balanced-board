@@ -3,13 +3,14 @@
 Semplice prototipo per allenamento su pedana con ESP32 + IMU.
 
 ## Cosa fa
-- Visualizza una traiettoria di allenamento, con scenario pratica o avanzato.
+- Visualizza una traiettoria di allenamento, con scenari practice, intermediate o advanced.
 - Mostra la posizione della pedana (punto controllato dall'IMU).
 - Evidenzia se il punto resta dentro una banda di tolleranza attorno al percorso.
 - Calcola una percentuale di accuratezza durante la sessione.
 
 ## Scenari
 - `practice`: mantiene la sinusoide classica, utile per prendere confidenza con il movimento alto/basso.
+- `intermediate`: mantiene il movimento verticale come `practice`, ma cambia in modo irregolare ampiezza e lunghezza d'onda della sinusoide.
 - `advanced`: usa un percorso 2D irregolare con variazioni anche a destra e sinistra, così l'allenamento richiede correzioni su entrambi gli assi.
 
 ## Hardware aggiornato
@@ -33,14 +34,14 @@ Opzionali (non necessari per questo firmware):
 
 ## Parametri configurabili
 Puoi impostare direttamente da riga comando:
-- `--scenario`: `practice` oppure `advanced`.
+- `--scenario`: `practice`, `intermediate` oppure `advanced`.
 - `--speed`: velocità di scorrimento della traiettoria.
 - `--amplitude`: ampiezza generale del movimento.
 - `--tolerance`: ampiezza della banda di tolleranza.
 - `--wavelength`: larghezza base dell'onda/percorso.
 
 Inoltre durante l'esecuzione puoi modificarli live:
-- `TAB`: passa da `practice` a `advanced` e viceversa.
+- `TAB`: passa ciclicamente tra `practice`, `intermediate` e `advanced`.
 - `1/2`: diminuisci/aumenta velocità.
 - `3/4`: diminuisci/aumenta ampiezza.
 - `5/6`: diminuisci/aumenta tolleranza.
@@ -61,6 +62,11 @@ pip install -r requirements.txt
 Senza sensore (simulazione tastiera):
 ```bash
 python app/main.py --mode keyboard --scenario advanced --speed 250 --amplitude 120 --tolerance 35 --wavelength 650
+```
+
+Per una prova intermedia:
+```bash
+python app/main.py --mode keyboard --scenario intermediate --speed 220 --amplitude 120 --tolerance 35 --wavelength 650
 ```
 
 Con ESP32 su seriale:

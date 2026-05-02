@@ -21,6 +21,8 @@ BAND_COLOR = (40, 110, 180)
 POINT_OK = (80, 230, 130)
 POINT_BAD = (255, 90, 90)
 TEXT = (220, 230, 245)
+SERIAL_Y_SCALE = 320.0
+DEFAULT_AXIS_SCALE = 250.0
 
 
 @dataclass
@@ -73,6 +75,34 @@ def y_target(x_px: float, scroll_px: float, cfg: TrainerConfig):
     return CENTER_Y + cfg.amplitude * math.sin(phase)
 
 
+def intermediate_wave_params(u_px: float, cfg: TrainerConfig):
+    base_phase = u_px * (2 * math.pi / cfg.wavelength)
+    amp_factor = (
+        1.0
+        + 0.16 * math.sin(u_px / 900.0 + 0.4)
+        + 0.06 * math.sin(u_px / 420.0 + 1.9)
+    )
+    phase_warp = (
+        0.95 * math.sin(u_px / 1250.0 + 1.2)
+        + 0.35 * math.sin(u_px / 530.0 - 0.8)
+    )
+    amplitude = max(25.0, cfg.amplitude * amp_factor)
+    phase = base_phase + phase_warp
+
+    phase_derivative = (
+        (2 * math.pi / cfg.wavelength)
+        + (0.95 / 1250.0) * math.cos(u_px / 1250.0 + 1.2)
+        + (0.35 / 530.0) * math.cos(u_px / 530.0 - 0.8)
+    )
+    wavelength = max(240.0, (2 * math.pi) / max(0.001, phase_derivative))
+    return amplitude, wavelength, phase
+
+
+def intermediate_target(x_px: float, scroll_px: float, cfg: TrainerConfig):
+    amplitude, _, phase = intermediate_wave_params(x_px + scroll_px, cfg)
+    return CENTER_Y + amplitude * math.sin(phase)
+
+
 def advanced_target(progress_px: float, scroll_px: float, cfg: TrainerConfig):
     phase = (progress_px + scroll_px) * (2 * math.pi / cfg.wavelength)
     x_amp = min(190.0, cfg.amplitude * 0.85)
@@ -98,6 +128,9 @@ def sample_path(scroll_px: float, cfg: TrainerConfig, step: int = 6):
     for progress in range(0, WIDTH + step, step):
         if cfg.scenario == "advanced":
             x, y = advanced_target(progress, scroll_px, cfg)
+        elif cfg.scenario == "intermediate":
+            x = float(progress)
+            y = intermediate_target(progress, scroll_px, cfg)
         else:
             x = float(progress)
             y = y_target(progress, scroll_px, cfg)
@@ -149,11 +182,11 @@ def run(args):
         tolerance=args.tolerance,
         wavelength=args.wavelength,
     )
-    t0 = time.time()
     scroll_px = 0.0
     speed_factor = 1.0
     in_band_frames = 0
     total_frames = 0
+    scenarios = ["practice", "intermediate", "advanced"]
 
     running = True
     while running:
@@ -167,11 +200,11 @@ def run(args):
                 if event.key == pygame.K_r:
                     in_band_frames = 0
                     total_frames = 0
-                    t0 = time.time()
                     scroll_px = 0.0
                     speed_factor = 1.0
                 if event.key == pygame.K_TAB:
-                    cfg.scenario = "advanced" if cfg.scenario == "practice" else "practice"
+                    current_index = scenarios.index(cfg.scenario)
+                    cfg.scenario = scenarios[(current_index + 1) % len(scenarios)]
                 # tuning runtime parametri
                 if event.key == pygame.K_1:
                     cfg.speed = max(20.0, cfg.speed - 20.0)
@@ -214,10 +247,10 @@ def run(args):
 
         scroll_px += cfg.speed * speed_factor * dt
 
-        px = WIDTH * 0.5 - pose.x * args.x_gain * 250
-        py = HEIGHT * 0.5 + pose.y * args.y_gain * 250
+        px = WIDTH * 0.5 - pose.x * args.x_gain * DEFAULT_AXIS_SCALE
+        y_scale = SERIAL_Y_SCALE if args.mode == "serial" else DEFAULT_AXIS_SCALE
+        py = HEIGHT * 0.5 + pose.y * args.y_gain * y_scale
 
-        elapsed = time.time() - t0
         points_main = sample_path(scroll_px, cfg)
         inside = distance_to_path(px, py, points_main) <= cfg.tolerance
 
@@ -242,8 +275,12 @@ def run(args):
         label = font.render(f"Accuracy: {accuracy:5.1f}%", True, TEXT)
         mode = font.render(f"Mode: {args.mode}", True, TEXT)
         scenario = font.render(f"Scenario: {cfg.scenario}", True, TEXT)
+        if cfg.scenario == "intermediate":
+            amp_now, wave_now, _ = intermediate_wave_params(scroll_px + WIDTH * 0.5, cfg)
+        else:
+            amp_now, wave_now = cfg.amplitude, cfg.wavelength
         cfg_txt = font.render(
-            f"speed={cfg.speed:.0f} brake={speed_factor:.2f} amp={cfg.amplitude:.0f} tol={cfg.tolerance:.0f} width={cfg.wavelength:.0f}",
+            f"speed={cfg.speed:.0f} brake={speed_factor:.2f} amp={amp_now:.0f} tol={cfg.tolerance:.0f} width={wave_now:.0f}",
             True,
             TEXT,
         )
@@ -273,7 +310,7 @@ def parse_args():
     p.add_argument("--mode", choices=["keyboard", "serial"], default="keyboard")
     p.add_argument("--port", default="/dev/ttyUSB0")
     p.add_argument("--baud", type=int, default=115200)
-    p.add_argument("--scenario", choices=["practice", "advanced"], default="advanced")
+    p.add_argument("--scenario", choices=["practice", "intermediate", "advanced"], default="advanced")
     p.add_argument("--tolerance", type=float, default=35.0, help="Ampiezza banda tolleranza in pixel")
     p.add_argument("--amplitude", type=float, default=120.0, help="Ampiezza della sinusoide in pixel")
     p.add_argument("--wavelength", type=float, default=650.0, help="Larghezza sinusoide (lunghezza d'onda) in pixel")
