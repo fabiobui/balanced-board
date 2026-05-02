@@ -66,7 +66,7 @@ python app/main.py --mode keyboard --scenario advanced --speed 250 --amplitude 1
 
 Per una prova intermedia:
 ```bash
-python app/main.py --mode keyboard --scenario intermediate --speed 220 --amplitude 120 --tolerance 35 --wavelength 650
+python app/main.py --mode keyboard --scenario intermediate --speed 220 --amplitude 250 --tolerance 65 --wavelength 700
 ```
 
 Con ESP32 su seriale:
@@ -87,3 +87,23 @@ python app/main.py --mode serial --scenario practice --port /dev/ttyUSB0 --baud 
 - Il firmware invia valori in gradi nel formato `pitch,roll`.
 - L'app normalizza automaticamente su una finestra [-20°, +20°].
 - Per pedane molto sensibili puoi aumentare `--tolerance` o ridurre `--amplitude`.
+
+
+### Seriale su Windows in WSL
+
+Con PowerShell con privilegi da Amministratore
+
+```
+usbipd list
+usbipd bind --busid 6-2
+usbipd attach --wsl --busid 6-2
+```
+
+in Wsl per verificare
+
+```
+screen /dev/ttyUSB0 115200
+```
+
+CTRL+a + k per fermare
+
