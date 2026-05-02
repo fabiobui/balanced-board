@@ -163,12 +163,18 @@ def distance_to_path(px: float, py: float, points):
 
 
 def run(args):
+    global WIDTH, HEIGHT, CENTER_Y
+
     pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("Arial", 24)
     small = pygame.font.SysFont("Arial", 20)
     big = pygame.font.SysFont("Arial", 34)
+    resize_events = {pygame.VIDEORESIZE}
+    window_size_changed = getattr(pygame, "WINDOWSIZECHANGED", None)
+    if window_size_changed is not None:
+        resize_events.add(window_size_changed)
 
     serial_reader = None
     if args.mode == "serial":
@@ -194,6 +200,8 @@ def run(args):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+            if event.type in resize_events:
+                screen = pygame.display.get_surface() or screen
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     running = False
@@ -222,6 +230,9 @@ def run(args):
                     cfg.wavelength = max(220.0, cfg.wavelength - 20.0)
                 if event.key == pygame.K_8:
                     cfg.wavelength = min(1500.0, cfg.wavelength + 20.0)
+
+        WIDTH, HEIGHT = screen.get_size()
+        CENTER_Y = HEIGHT // 2
 
         if args.mode == "keyboard":
             keys = pygame.key.get_pressed()
