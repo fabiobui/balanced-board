@@ -3,10 +3,14 @@
 Semplice prototipo per allenamento su pedana con ESP32 + IMU.
 
 ## Cosa fa
-- Visualizza una traiettoria sinusoidale che scorre da sinistra verso destra.
+- Visualizza una traiettoria di allenamento, con scenario pratica o avanzato.
 - Mostra la posizione della pedana (punto controllato dall'IMU).
-- Evidenzia se il punto resta dentro una banda di tolleranza attorno alla sinusoide.
+- Evidenzia se il punto resta dentro una banda di tolleranza attorno al percorso.
 - Calcola una percentuale di accuratezza durante la sessione.
+
+## Scenari
+- `practice`: mantiene la sinusoide classica, utile per prendere confidenza con il movimento alto/basso.
+- `advanced`: usa un percorso 2D irregolare con variazioni anche a destra e sinistra, così l'allenamento richiede correzioni su entrambi gli assi.
 
 ## Hardware aggiornato
 - MCU: **D1 mini ESP32**
@@ -29,16 +33,18 @@ Opzionali (non necessari per questo firmware):
 
 ## Parametri configurabili
 Puoi impostare direttamente da riga comando:
+- `--scenario`: `practice` oppure `advanced`.
 - `--speed`: velocità di scorrimento della traiettoria.
-- `--amplitude`: ampiezza della sinusoide.
+- `--amplitude`: ampiezza generale del movimento.
 - `--tolerance`: ampiezza della banda di tolleranza.
-- `--wavelength`: larghezza della sinusoide.
+- `--wavelength`: larghezza base dell'onda/percorso.
 
 Inoltre durante l'esecuzione puoi modificarli live:
+- `TAB`: passa da `practice` a `advanced` e viceversa.
 - `1/2`: diminuisci/aumenta velocità.
 - `3/4`: diminuisci/aumenta ampiezza.
 - `5/6`: diminuisci/aumenta tolleranza.
-- `7/8`: diminuisci/aumenta larghezza sinusoide.
+- `7/8`: diminuisci/aumenta larghezza del percorso.
 
 ## Struttura
 - `app/main.py`: applicazione desktop (Python + Pygame).
@@ -54,17 +60,18 @@ pip install -r requirements.txt
 ## Esecuzione
 Senza sensore (simulazione tastiera):
 ```bash
-python app/main.py --mode keyboard --speed 250 --amplitude 120 --tolerance 35 --wavelength 650
+python app/main.py --mode keyboard --scenario advanced --speed 250 --amplitude 120 --tolerance 35 --wavelength 650
 ```
 
 Con ESP32 su seriale:
 ```bash
-python app/main.py --mode serial --port /dev/ttyUSB0 --baud 115200 --speed 250 --amplitude 120 --tolerance 35 --wavelength 650
+python app/main.py --mode serial --scenario advanced --port /dev/ttyUSB0 --baud 115200 --speed 250 --amplitude 120 --tolerance 35 --wavelength 650
 ```
 
 ## Controlli modalità keyboard
 - Frecce direzionali: muovi il punto.
 - `R`: reset punteggio.
+- `TAB`: cambia scenario.
 - `ESC`: esci.
 
 ## Note di calibrazione

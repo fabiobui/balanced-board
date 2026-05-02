@@ -31,6 +31,7 @@ class Pose:
 
 @dataclass
 class TrainerConfig:
+    scenario: str
     speed: float
     amplitude: float
     tolerance: float
@@ -67,9 +68,65 @@ class SerialReader:
         self.ser.close()
 
 
-def y_target(x_px: float, t: float, cfg: TrainerConfig):
-    phase = (x_px + cfg.speed * t) * (2 * math.pi / cfg.wavelength)
+def y_target(x_px: float, scroll_px: float, cfg: TrainerConfig):
+    phase = (x_px + scroll_px) * (2 * math.pi / cfg.wavelength)
     return CENTER_Y + cfg.amplitude * math.sin(phase)
+
+
+def advanced_target(progress_px: float, scroll_px: float, cfg: TrainerConfig):
+    phase = (progress_px + scroll_px) * (2 * math.pi / cfg.wavelength)
+    x_amp = min(190.0, cfg.amplitude * 0.85)
+    y_amp = cfg.amplitude
+    x = (
+        progress_px
+        + x_amp * math.sin(phase * 0.72 + 0.8)
+        + x_amp * 0.32 * math.sin(phase * 1.63 - 0.4)
+    )
+    y = (
+        CENTER_Y
+        + y_amp * math.sin(phase)
+        + y_amp * 0.42 * math.sin(phase * 2.11 + 1.1)
+        + y_amp * 0.18 * math.cos(phase * 0.49 - 0.6)
+    )
+    x = max(30.0, min(WIDTH - 30.0, x))
+    y = max(30.0, min(HEIGHT - 30.0, y))
+    return x, y
+
+
+def sample_path(scroll_px: float, cfg: TrainerConfig, step: int = 6):
+    points = []
+    for progress in range(0, WIDTH + step, step):
+        if cfg.scenario == "advanced":
+            x, y = advanced_target(progress, scroll_px, cfg)
+        else:
+            x = float(progress)
+            y = y_target(progress, scroll_px, cfg)
+        points.append((x, y))
+    return points
+
+
+def point_to_segment_distance(px: float, py: float, ax: float, ay: float, bx: float, by: float):
+    dx = bx - ax
+    dy = by - ay
+    denom = dx * dx + dy * dy
+    if denom == 0:
+        return math.hypot(px - ax, py - ay)
+    projection = ((px - ax) * dx + (py - ay) * dy) / denom
+    projection = max(0.0, min(1.0, projection))
+    closest_x = ax + projection * dx
+    closest_y = ay + projection * dy
+    return math.hypot(px - closest_x, py - closest_y)
+
+
+def distance_to_path(px: float, py: float, points):
+    if not points:
+        return float("inf")
+    best = math.hypot(px - points[0][0], py - points[0][1])
+    for idx in range(len(points) - 1):
+        ax, ay = points[idx]
+        bx, by = points[idx + 1]
+        best = min(best, point_to_segment_distance(px, py, ax, ay, bx, by))
+    return best
 
 
 def run(args):
@@ -86,12 +143,15 @@ def run(args):
 
     sim = Pose()
     cfg = TrainerConfig(
+        scenario=args.scenario,
         speed=args.speed,
         amplitude=args.amplitude,
         tolerance=args.tolerance,
         wavelength=args.wavelength,
     )
     t0 = time.time()
+    scroll_px = 0.0
+    speed_factor = 1.0
     in_band_frames = 0
     total_frames = 0
 
@@ -108,6 +168,10 @@ def run(args):
                     in_band_frames = 0
                     total_frames = 0
                     t0 = time.time()
+                    scroll_px = 0.0
+                    speed_factor = 1.0
+                if event.key == pygame.K_TAB:
+                    cfg.scenario = "advanced" if cfg.scenario == "practice" else "practice"
                 # tuning runtime parametri
                 if event.key == pygame.K_1:
                     cfg.speed = max(20.0, cfg.speed - 20.0)
@@ -131,24 +195,30 @@ def run(args):
             speed = 1.2
             if keys[pygame.K_LEFT]:
                 sim.x -= speed * dt
+                speed_factor = max(0.2, speed_factor - 3.2 * dt)
             if keys[pygame.K_RIGHT]:
                 sim.x += speed * dt
             if keys[pygame.K_UP]:
                 sim.y -= speed * dt
             if keys[pygame.K_DOWN]:
                 sim.y += speed * dt
+            if not keys[pygame.K_LEFT]:
+                speed_factor = min(1.0, speed_factor + 1.2 * dt)
             sim.x = max(-1.0, min(1.0, sim.x))
             sim.y = max(-1.0, min(1.0, sim.y))
             pose = sim
         else:
             pose = serial_reader.pose
+            speed_factor = 1.0
+
+        scroll_px += cfg.speed * speed_factor * dt
 
         px = WIDTH * 0.5 + pose.x * args.x_gain * 250
         py = HEIGHT * 0.5 + pose.y * args.y_gain * 250
 
         elapsed = time.time() - t0
-        target_y = y_target(px, elapsed, cfg)
-        inside = abs(py - target_y) <= cfg.tolerance
+        points_main = sample_path(scroll_px, cfg)
+        inside = distance_to_path(px, py, points_main) <= cfg.tolerance
 
         total_frames += 1
         if inside:
@@ -161,38 +231,33 @@ def run(args):
         for x in range(0, WIDTH, 100):
             pygame.draw.line(screen, GRID, (x, 0), (x, HEIGHT), 1)
 
-        points_main, points_hi, points_lo = [], [], []
-        for x in range(0, WIDTH, 6):
-            yy = y_target(x, elapsed, cfg)
-            points_main.append((x, yy))
-            points_hi.append((x, yy - cfg.tolerance))
-            points_lo.append((x, yy + cfg.tolerance))
-
         if len(points_main) > 1:
-            pygame.draw.lines(screen, BAND_COLOR, False, points_hi, 2)
-            pygame.draw.lines(screen, BAND_COLOR, False, points_lo, 2)
+            for x, y in points_main:
+                pygame.draw.circle(screen, BAND_COLOR, (int(x), int(y)), int(cfg.tolerance), 1)
             pygame.draw.lines(screen, PATH_COLOR, False, points_main, 3)
 
         pygame.draw.circle(screen, POINT_OK if inside else POINT_BAD, (int(px), int(py)), 14)
 
         label = font.render(f"Accuracy: {accuracy:5.1f}%", True, TEXT)
         mode = font.render(f"Mode: {args.mode}", True, TEXT)
+        scenario = font.render(f"Scenario: {cfg.scenario}", True, TEXT)
         cfg_txt = font.render(
-            f"speed={cfg.speed:.0f} amp={cfg.amplitude:.0f} tol={cfg.tolerance:.0f} width={cfg.wavelength:.0f}",
+            f"speed={cfg.speed:.0f} brake={speed_factor:.2f} amp={cfg.amplitude:.0f} tol={cfg.tolerance:.0f} width={cfg.wavelength:.0f}",
             True,
             TEXT,
         )
         state = big.render("IN BANDA" if inside else "FUORI BANDA", True, POINT_OK if inside else POINT_BAD)
         help_txt = small.render(
-            "1/2 speed  3/4 ampiezza  5/6 tolleranza  7/8 larghezza sinusoide",
+            "TAB scenario  1/2 speed  3/4 ampiezza  5/6 tolleranza  7/8 larghezza",
             True,
             TEXT,
         )
 
         screen.blit(label, (20, 20))
         screen.blit(mode, (20, 50))
-        screen.blit(cfg_txt, (20, 80))
-        screen.blit(help_txt, (20, 110))
+        screen.blit(scenario, (20, 80))
+        screen.blit(cfg_txt, (20, 110))
+        screen.blit(help_txt, (20, 140))
         screen.blit(state, (20, HEIGHT - 60))
 
         pygame.display.flip()
@@ -207,6 +272,7 @@ def parse_args():
     p.add_argument("--mode", choices=["keyboard", "serial"], default="keyboard")
     p.add_argument("--port", default="/dev/ttyUSB0")
     p.add_argument("--baud", type=int, default=115200)
+    p.add_argument("--scenario", choices=["practice", "advanced"], default="advanced")
     p.add_argument("--tolerance", type=float, default=35.0, help="Ampiezza banda tolleranza in pixel")
     p.add_argument("--amplitude", type=float, default=120.0, help="Ampiezza della sinusoide in pixel")
     p.add_argument("--wavelength", type=float, default=650.0, help="Larghezza sinusoide (lunghezza d'onda) in pixel")
