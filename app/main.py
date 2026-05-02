@@ -29,6 +29,14 @@ class Pose:
     y: float = 0.0  # pitch
 
 
+@dataclass
+class TrainerConfig:
+    speed: float
+    amplitude: float
+    tolerance: float
+    wavelength: float
+
+
 class SerialReader:
     def __init__(self, port: str, baud: int):
         if serial is None:
@@ -59,9 +67,9 @@ class SerialReader:
         self.ser.close()
 
 
-def y_target(x_px: float, t: float, amplitude: float, wavelength: float, speed: float):
-    phase = (x_px + speed * t) * (2 * math.pi / wavelength)
-    return CENTER_Y + amplitude * math.sin(phase)
+def y_target(x_px: float, t: float, cfg: TrainerConfig):
+    phase = (x_px + cfg.speed * t) * (2 * math.pi / cfg.wavelength)
+    return CENTER_Y + cfg.amplitude * math.sin(phase)
 
 
 def run(args):
@@ -69,6 +77,7 @@ def run(args):
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("Arial", 24)
+    small = pygame.font.SysFont("Arial", 20)
     big = pygame.font.SysFont("Arial", 34)
 
     serial_reader = None
@@ -76,6 +85,12 @@ def run(args):
         serial_reader = SerialReader(args.port, args.baud)
 
     sim = Pose()
+    cfg = TrainerConfig(
+        speed=args.speed,
+        amplitude=args.amplitude,
+        tolerance=args.tolerance,
+        wavelength=args.wavelength,
+    )
     t0 = time.time()
     in_band_frames = 0
     total_frames = 0
@@ -93,6 +108,23 @@ def run(args):
                     in_band_frames = 0
                     total_frames = 0
                     t0 = time.time()
+                # tuning runtime parametri
+                if event.key == pygame.K_1:
+                    cfg.speed = max(20.0, cfg.speed - 20.0)
+                if event.key == pygame.K_2:
+                    cfg.speed = min(800.0, cfg.speed + 20.0)
+                if event.key == pygame.K_3:
+                    cfg.amplitude = max(20.0, cfg.amplitude - 10.0)
+                if event.key == pygame.K_4:
+                    cfg.amplitude = min(280.0, cfg.amplitude + 10.0)
+                if event.key == pygame.K_5:
+                    cfg.tolerance = max(8.0, cfg.tolerance - 2.0)
+                if event.key == pygame.K_6:
+                    cfg.tolerance = min(130.0, cfg.tolerance + 2.0)
+                if event.key == pygame.K_7:
+                    cfg.wavelength = max(220.0, cfg.wavelength - 20.0)
+                if event.key == pygame.K_8:
+                    cfg.wavelength = min(1500.0, cfg.wavelength + 20.0)
 
         if args.mode == "keyboard":
             keys = pygame.key.get_pressed()
@@ -111,13 +143,12 @@ def run(args):
         else:
             pose = serial_reader.pose
 
-        # mapping board tilt to visual point
         px = WIDTH * 0.5 + pose.x * args.x_gain * 250
         py = HEIGHT * 0.5 + pose.y * args.y_gain * 250
 
         elapsed = time.time() - t0
-        target_y = y_target(px, elapsed, args.amplitude, args.wavelength, args.speed)
-        inside = abs(py - target_y) <= args.tolerance
+        target_y = y_target(px, elapsed, cfg)
+        inside = abs(py - target_y) <= cfg.tolerance
 
         total_frames += 1
         if inside:
@@ -125,20 +156,17 @@ def run(args):
         accuracy = 100.0 * in_band_frames / max(1, total_frames)
 
         screen.fill(BG)
-
         for y in range(0, HEIGHT, 70):
             pygame.draw.line(screen, GRID, (0, y), (WIDTH, y), 1)
         for x in range(0, WIDTH, 100):
             pygame.draw.line(screen, GRID, (x, 0), (x, HEIGHT), 1)
 
-        points_main = []
-        points_hi = []
-        points_lo = []
+        points_main, points_hi, points_lo = [], [], []
         for x in range(0, WIDTH, 6):
-            yy = y_target(x, elapsed, args.amplitude, args.wavelength, args.speed)
+            yy = y_target(x, elapsed, cfg)
             points_main.append((x, yy))
-            points_hi.append((x, yy - args.tolerance))
-            points_lo.append((x, yy + args.tolerance))
+            points_hi.append((x, yy - cfg.tolerance))
+            points_lo.append((x, yy + cfg.tolerance))
 
         if len(points_main) > 1:
             pygame.draw.lines(screen, BAND_COLOR, False, points_hi, 2)
@@ -149,11 +177,22 @@ def run(args):
 
         label = font.render(f"Accuracy: {accuracy:5.1f}%", True, TEXT)
         mode = font.render(f"Mode: {args.mode}", True, TEXT)
-        cfg = font.render(f"tol={args.tolerance}px amp={args.amplitude}px", True, TEXT)
+        cfg_txt = font.render(
+            f"speed={cfg.speed:.0f} amp={cfg.amplitude:.0f} tol={cfg.tolerance:.0f} width={cfg.wavelength:.0f}",
+            True,
+            TEXT,
+        )
         state = big.render("IN BANDA" if inside else "FUORI BANDA", True, POINT_OK if inside else POINT_BAD)
+        help_txt = small.render(
+            "1/2 speed  3/4 ampiezza  5/6 tolleranza  7/8 larghezza sinusoide",
+            True,
+            TEXT,
+        )
+
         screen.blit(label, (20, 20))
         screen.blit(mode, (20, 50))
-        screen.blit(cfg, (20, 80))
+        screen.blit(cfg_txt, (20, 80))
+        screen.blit(help_txt, (20, 110))
         screen.blit(state, (20, HEIGHT - 60))
 
         pygame.display.flip()
@@ -168,10 +207,10 @@ def parse_args():
     p.add_argument("--mode", choices=["keyboard", "serial"], default="keyboard")
     p.add_argument("--port", default="/dev/ttyUSB0")
     p.add_argument("--baud", type=int, default=115200)
-    p.add_argument("--tolerance", type=float, default=35.0)
-    p.add_argument("--amplitude", type=float, default=120.0)
-    p.add_argument("--wavelength", type=float, default=650.0)
-    p.add_argument("--speed", type=float, default=250.0)
+    p.add_argument("--tolerance", type=float, default=35.0, help="Ampiezza banda tolleranza in pixel")
+    p.add_argument("--amplitude", type=float, default=120.0, help="Ampiezza della sinusoide in pixel")
+    p.add_argument("--wavelength", type=float, default=650.0, help="Larghezza sinusoide (lunghezza d'onda) in pixel")
+    p.add_argument("--speed", type=float, default=250.0, help="Velocita di scorrimento in pixel/s")
     p.add_argument("--x-gain", type=float, default=1.0)
     p.add_argument("--y-gain", type=float, default=1.0)
     return p.parse_args()
