@@ -66,6 +66,9 @@ python app/main.py --mode keyboard --scenario advanced --speed 250 --amplitude 1
 Con ESP32 su seriale:
 ```bash
 python app/main.py --mode serial --scenario advanced --port /dev/ttyUSB0 --baud 115200 --speed 250 --amplitude 120 --tolerance 35 --wavelength 650
+
+python app/main.py --mode serial --scenario practice --port /dev/ttyUSB0 --baud 115200 --speed 150 --amplitude 160 --tolerance 70 --wavelength 650
+
 ```
 
 ## Controlli modalità keyboard

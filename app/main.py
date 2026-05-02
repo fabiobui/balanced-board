@@ -192,16 +192,17 @@ def run(args):
 
         if args.mode == "keyboard":
             keys = pygame.key.get_pressed()
-            speed = 1.2
+            speed_x = 1.2
+            speed_y = 1.35
             if keys[pygame.K_LEFT]:
-                sim.x -= speed * dt
+                sim.x -= speed_x * dt
                 speed_factor = max(0.2, speed_factor - 3.2 * dt)
             if keys[pygame.K_RIGHT]:
-                sim.x += speed * dt
+                sim.x += speed_x * dt
             if keys[pygame.K_UP]:
-                sim.y -= speed * dt
+                sim.y -= speed_y * dt
             if keys[pygame.K_DOWN]:
-                sim.y += speed * dt
+                sim.y += speed_y * dt
             if not keys[pygame.K_LEFT]:
                 speed_factor = min(1.0, speed_factor + 1.2 * dt)
             sim.x = max(-1.0, min(1.0, sim.x))
@@ -213,7 +214,7 @@ def run(args):
 
         scroll_px += cfg.speed * speed_factor * dt
 
-        px = WIDTH * 0.5 + pose.x * args.x_gain * 250
+        px = WIDTH * 0.5 - pose.x * args.x_gain * 250
         py = HEIGHT * 0.5 + pose.y * args.y_gain * 250
 
         elapsed = time.time() - t0
